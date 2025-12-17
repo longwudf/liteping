@@ -1,0 +1,37 @@
+{
+  "name": "liteping",
+  "version": "1.0.0",
+  "description": "A lightweight, serverless status page and monitoring tool.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "status-page",
+    "monitoring",
+    "cloudflare-workers",
+    "sveltekit",
+    "drizzle-orm"
+  ],
+  "author": "LitePing Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/longwudf/liteping.git"
+  },
+  "packageManager": "pnpm@10.25.0",
+  "pnpm": {
+    "overrides": {
+      "drizzle-orm": "^0.45.1"
+    }
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-cloudflare": "^7.2.4",
+    "autoprefixer": "^10.4.22",
+    "drizzle-orm": "^0.45.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.17",
+    "turbo": "^2.6.3",
+    "typescript": "^5.9.3"
+  }
+}

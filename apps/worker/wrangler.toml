@@ -1,0 +1,16 @@
+name = "liteping-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# 开启 Cron 触发器 (每分钟执行一次)
+[triggers]
+crons = ["* * * * *"]
+
+# 绑定 D1 数据库
+[[d1_databases]]
+binding = "DB"
+database_name = "liteping-db"
+database_id = "f83fd4e9-8d94-4430-8389-d417aaa7b2f6"
+
+[vars]
+NOTIFY_LANGUAGE = "zh-CN"

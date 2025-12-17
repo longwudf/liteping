@@ -1,0 +1,1 @@
+ALTER TABLE `monitors` ADD `weight` integer DEFAULT 0;
