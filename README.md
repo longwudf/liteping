@@ -117,7 +117,14 @@ pnpm build
 npx wrangler pages deploy .svelte-kit/cloudflare
 ```
 
-## 🔧 Configuration
+## �️ Usage
+
+### Admin Dashboard
+Access the admin dashboard at `/admin` (e.g., `https://your-site.pages.dev/admin`).
+- **First Login**: You will be prompted to set an admin password if one hasn't been configured via environment variables.
+- **Features**: Add monitors, configure notifications, view detailed stats, and manage maintenance windows.
+
+## �🔧 Configuration
 
 Environment variables can be set in the Cloudflare Dashboard or `wrangler.toml`.
 
