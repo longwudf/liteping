@@ -41,10 +41,19 @@ jobs:
           cd apps/web
           pnpm build
 
+      - name: Set Pages production branch
+        run: |
+          curl --fail-with-body -sS \
+            -X PATCH \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/liteping-web" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"production_branch":"main"}'
+
       - name: Deploy Web
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
-          command: pages deploy .svelte-kit/cloudflare --project-name liteping-web --branch master --commit-hash ${{ github.sha }} --commit-message "${{ github.event.head_commit.message }}"
+          command: pages deploy .svelte-kit/cloudflare --project-name liteping-web --branch main --commit-hash ${{ github.sha }} --commit-message "${{ github.event.head_commit.message }}"
