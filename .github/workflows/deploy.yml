@@ -17,7 +17,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 10
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -47,4 +47,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
-          command: pages deploy .svelte-kit/cloudflare --project-name liteping-web
+          command: pages deploy .svelte-kit/cloudflare --project-name liteping-web --branch main --commit-hash ${{ github.sha }} --commit-message "${{ github.event.head_commit.message }}"
