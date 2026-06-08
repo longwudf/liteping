@@ -47,4 +47,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
-          command: pages deploy .svelte-kit/cloudflare --project-name liteping-web --branch main --commit-hash ${{ github.sha }} --commit-message "${{ github.event.head_commit.message }}"
+          command: pages deploy .svelte-kit/cloudflare --project-name liteping-web --branch master --commit-hash ${{ github.sha }} --commit-message "${{ github.event.head_commit.message }}"
