@@ -10,37 +10,33 @@
     let editingId: string | null = $state(null);
     let fileInput: HTMLInputElement;
     let selectedNotifierType: string = $state("discord");
+    let copiedBadgeId: string | null = $state(null);
+    let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+    let orderError = $state("");
 
-    // 搜索与批量管理
     let searchQuery = $state("");
     let selectedIds: string[] = $state([]);
-    
-    // 过滤后的监控列表
+
     let filteredMonitors = $derived(
-        data.monitors.filter(m => 
-            m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-            m.url.toLowerCase().includes(searchQuery.toLowerCase())
-        )
+        data.monitors.filter((m) =>
+            m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            m.url.toLowerCase().includes(searchQuery.toLowerCase()),
+        ),
     );
 
-    // 全选/反选
     function toggleSelectAll() {
-        if (selectedIds.length === filteredMonitors.length) {
-            selectedIds = [];
-        } else {
-            selectedIds = filteredMonitors.map(m => m.id);
-        }
+        selectedIds =
+            selectedIds.length === filteredMonitors.length
+                ? []
+                : filteredMonitors.map((m) => m.id);
     }
 
     function toggleSelect(id: string) {
-        if (selectedIds.includes(id)) {
-            selectedIds = selectedIds.filter(i => i !== id);
-        } else {
-            selectedIds = [...selectedIds, id];
-        }
+        selectedIds = selectedIds.includes(id)
+            ? selectedIds.filter((i) => i !== id)
+            : [...selectedIds, id];
     }
 
-    // 排序调整
     function moveUp(index: number) {
         if (index === 0) return;
         const list = [...filteredMonitors];
@@ -64,34 +60,31 @@
     }
 
     function saveOrder(list: any[]) {
-        // 重新计算权重：列表越靠前，权重越大 (或者越小，取决于排序逻辑)
-        // 后端是 desc(weight)，所以第一个元素权重最大
         const orderData = list.map((item, index) => ({
             id: item.id,
-            weight: list.length - index
+            weight: list.length - index,
         }));
-        
+
         const formData = new FormData();
-        formData.append('order', JSON.stringify(orderData));
-        formData.append('csrf', csrfToken);
-        
-        fetch('?/save_order', {
-            method: 'POST',
-            body: formData
-        }).then((response) => {
-            if (!response.ok) {
-                throw new Error("Failed to save monitor order");
-            }
-            // 乐观更新：虽然页面会刷新，但这里可以先不做啥，SvelteKit enhance 会处理
-            // 但因为我们是手动 fetch，需要手动刷新数据或者等待
-            // 为了简单，直接刷新页面
-            window.location.reload();
-        }).catch(() => {
-            alert("Failed to save monitor order.");
-        });
+        formData.append("order", JSON.stringify(orderData));
+        formData.append("csrf", csrfToken);
+        orderError = "";
+
+        fetch("?/save_order", {
+            method: "POST",
+            body: formData,
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to save monitor order");
+                }
+                window.location.reload();
+            })
+            .catch(() => {
+                orderError = $t.admin.order_save_failed;
+            });
     }
 
-    //  通知渠道编辑状态
     let editingNotifierId: string | null = $state(null);
     let editingType = $state("discord");
     let currentEditingConfig: any = $state({});
@@ -100,7 +93,6 @@
         editingId = editingId === id ? null : id;
     }
 
-    //  开启通知渠道编辑模式
     function startEditNotifier(item: any) {
         editingNotifierId = item.id;
         editingType = item.type;
@@ -121,7 +113,6 @@
         }
     }
 
-    //  复制徽章 Markdown 代码
     function copyBadge(item: any) {
         const origin = window.location.origin;
         const safeName = encodeURIComponent(item.name);
@@ -131,7 +122,12 @@
         navigator.clipboard
             .writeText(markdown)
             .then(() => {
-                alert($t.sections.markdown_copied);
+                copiedBadgeId = item.id;
+                if (copyResetTimer) clearTimeout(copyResetTimer);
+                copyResetTimer = setTimeout(() => {
+                    copiedBadgeId = null;
+                    copyResetTimer = null;
+                }, 1800);
             })
             .catch(() => {
                 prompt("Copy this Markdown:", markdown);
@@ -170,21 +166,18 @@
     }
 </script>
 
-<div class="min-h-screen bg-[#0a0a0a] text-white font-mono p-8">
+<div class="min-h-screen bg-[#0a0a0a] text-white font-mono px-4 py-6 md:p-8">
     <div class="max-w-6xl mx-auto">
-        <div
-            class="flex flex-col md:flex-row justify-between items-end mb-10 border-b border-neutral-800 pb-4 gap-4"
-        >
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 border-b border-neutral-800 pb-4 gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-green-500">
                     {$t.admin.title}
                 </h1>
                 <a href="/" class="text-sm text-gray-500 hover:text-white"
-                    >← {$t.labels.back_dashboard}</a
-                >
+                    >&larr; {$t.labels.back_dashboard}</a>
             </div>
 
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
                 <a
                     href="/api/backup"
                     download
@@ -321,9 +314,7 @@
             </div>
         </div>
 
-        <!-- Maintenance Management (Removed Duplicate) -->
 
-        <!-- Incident Management -->
         <div class="bg-neutral-900/30 border border-neutral-800 p-4 rounded-xl mb-8">
             <h2 class="text-sm font-bold mb-4 text-gray-400 uppercase tracking-wider">{$t.detail.incident_history}</h2>
             <div class="space-y-2">
@@ -337,7 +328,7 @@
                                 <div class="flex items-center gap-2 mb-1">
                                     <span class={`w-2 h-2 rounded-full ${incident.resolvedAt ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></span>
                                     <span class="text-xs text-gray-500">
-                                        {data.monitors.find(x => x.id === incident.monitorId)?.name || $t.status.unknown} • 
+                                        {data.monitors.find(x => x.id === incident.monitorId)?.name || $t.status.unknown} &middot;
                                         {format(new Date(incident.startedAt * 1000), 'MMM d HH:mm')}
                                     </span>
                                 </div>
@@ -463,8 +454,6 @@
                 method="POST"
                 action="?/create_maintenance"
                 use:enhance={({ formData }) => {
-                    // 🕒 核心修复：将本地时间转换为 ISO 字符串 (带时区偏移)
-                    // 这样服务器 new Date(iso) 就能正确识别为 UTC 时间
                     const start = formData.get("start_time") as string;
                     const end = formData.get("end_time") as string;
 
@@ -532,7 +521,6 @@
                             <div
                                 class="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500"
                             >
-                                <!-- Optional: Add a custom icon here if needed, but native picker is now better -->
                             </div>
                         </div>
                     </label>
@@ -655,7 +643,6 @@
             {/if}
         </div>
 
-        <!-- 通知渠道管理 -->
         <div
             class="bg-neutral-900/50 border border-neutral-800 p-6 rounded-xl mb-12"
         >
@@ -663,7 +650,6 @@
                 {$t.admin.sec_notifications}
             </h2>
 
-            <!-- 创建新通知渠道表单 -->
             <div class="mb-8 p-4 bg-black/50 rounded border border-neutral-700">
                 <h3 class="text-sm font-semibold mb-4 text-gray-300">
                     {$t.sections.create_channel}
@@ -710,7 +696,6 @@
                         </div>
                     </div>
 
-                    <!-- 条件字段：基于类型 -->
                     {#if selectedNotifierType === "telegram"}
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="space-y-1">
@@ -768,7 +753,6 @@
                 </form>
             </div>
 
-            <!-- 通知渠道列表 -->
             {#if data.notifiers && data.notifiers.length > 0}
                 <div class="space-y-2">
                     <h3 class="text-sm font-semibold text-gray-300 mb-3">
@@ -779,7 +763,6 @@
                             class="bg-black p-2 rounded border border-neutral-800"
                         >
                             {#if editingNotifierId !== item.id}
-                                <!-- 显示模式 -->
                                 <div class="flex justify-between items-center">
                                     <div class="flex items-center gap-2">
                                         <span
@@ -828,7 +811,6 @@
                                     </div>
                                 </div>
                             {:else}
-                                <!-- 编辑模式 -->
                                 <form
                                     method="POST"
                                     action="?/update_notifier"
@@ -1052,18 +1034,17 @@
             </form>
         </div>
 
-        <div class="space-y-1">
-            <!-- 🔍 搜索与批量操作栏 -->
-            <div class="flex justify-between items-center mb-4 px-1">
-                <div class="flex items-center gap-2 flex-1">
+        <div class="space-y-1 overflow-x-auto pb-2">
+            <div class="flex justify-between items-center mb-4 px-1 min-w-[920px]">
+                <div class="flex flex-wrap items-center gap-2 flex-1">
                     <input 
                         type="text" 
                         bind:value={searchQuery}
                         placeholder={$t.admin.search_placeholder}
-                        class="bg-neutral-900 border border-neutral-800 rounded px-3 py-1.5 text-sm text-white w-64 focus:border-neutral-600 outline-none"
+                        class="bg-neutral-900 border border-neutral-800 rounded px-3 py-1.5 text-sm text-white w-full sm:w-64 focus:border-neutral-600 outline-none"
                     />
                     {#if selectedIds.length > 0}
-                        <div class="flex items-center gap-2 ml-4 bg-neutral-900 border border-neutral-800 rounded px-2 py-1">
+                        <div class="flex flex-wrap items-center gap-2 sm:ml-4 bg-neutral-900 border border-neutral-800 rounded px-2 py-1">
                             <span class="text-xs text-gray-400 px-2">{selectedIds.length} {$t.admin.selected}</span>
                             <div class="h-4 w-px bg-neutral-800"></div>
                             <form method="POST" action="?/batch_action" use:enhance>
@@ -1078,7 +1059,13 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-12 text-xs text-gray-500 px-4 pb-2 items-center">
+            {#if orderError}
+                <div class="min-w-[920px] mb-3 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                    {orderError}
+                </div>
+            {/if}
+
+            <div class="grid grid-cols-12 text-xs text-gray-500 px-4 pb-2 items-center min-w-[920px]">
                 <div class="col-span-1 flex justify-center">
                     <input type="checkbox" 
                         checked={selectedIds.length === filteredMonitors.length && filteredMonitors.length > 0}
@@ -1096,19 +1083,15 @@
 
             {#each filteredMonitors as monitor, index (monitor.id)}
                 <div
-                    class="bg-neutral-900 border border-neutral-800 p-2 rounded hover:border-neutral-700 transition-colors"
+                    class="bg-neutral-900 border border-neutral-800 p-2 rounded hover:border-neutral-700 transition-colors min-w-[920px]"
                 >
                     {#if editingId === monitor.id}
                         <form
                             method="POST"
                             action="?/update"
                             use:enhance={() => {
-                                // 提交前准备
                                 return async ({ update, result }) => {
-                                    // 等待后端返回结果
                                     await update();
-
-                                    // 只有成功后才关闭编辑框
                                     if (result.type === "success") {
                                         editingId = null;
                                     }
@@ -1207,9 +1190,9 @@
                                     class="rounded bg-neutral-800 border-neutral-700"
                                 />
                                 <div class="flex flex-col gap-0.5">
-                                    <button type="button" onclick={() => pinToTop(index)} class="text-[10px] text-yellow-600 hover:text-yellow-400 leading-none" disabled={index === 0 || searchQuery !== ''} title={$t.admin.btn_pin}>📌</button>
-                                    <button type="button" onclick={() => moveUp(index)} class="text-[10px] text-gray-600 hover:text-white leading-none" disabled={index === 0 || searchQuery !== ''}>▲</button>
-                                    <button type="button" onclick={() => moveDown(index)} class="text-[10px] text-gray-600 hover:text-white leading-none" disabled={index === filteredMonitors.length - 1 || searchQuery !== ''}>▼</button>
+                                    <button type="button" onclick={() => pinToTop(index)} class="text-[10px] text-yellow-600 hover:text-yellow-400 leading-none disabled:opacity-30" disabled={index === 0 || searchQuery !== ''} title={$t.admin.btn_pin} aria-label={$t.admin.btn_pin}>&#8679;</button>
+                                    <button type="button" onclick={() => moveUp(index)} class="text-[10px] text-gray-600 hover:text-white leading-none disabled:opacity-30" disabled={index === 0 || searchQuery !== ''} title={$t.admin.btn_move_up} aria-label={$t.admin.btn_move_up}>&uarr;</button>
+                                    <button type="button" onclick={() => moveDown(index)} class="text-[10px] text-gray-600 hover:text-white leading-none disabled:opacity-30" disabled={index === filteredMonitors.length - 1 || searchQuery !== ''} title={$t.admin.btn_move_down} aria-label={$t.admin.btn_move_down}>&darr;</button>
                                 </div>
                             </div>
                             <div class="col-span-1 flex justify-center">
@@ -1255,10 +1238,12 @@
                                     <button
                                         type="button"
                                         onclick={() => copyBadge(monitor)}
-                                        class="text-xs text-neutral-500 hover:text-white mr-1 border border-neutral-800 px-1 rounded hover:bg-neutral-800 transition-colors"
+                                        class="text-xs mr-1 border px-1 rounded transition-colors {copiedBadgeId === monitor.id ? 'text-green-400 border-green-500/30 bg-green-500/10' : 'text-neutral-500 hover:text-white border-neutral-800 hover:bg-neutral-800'}"
                                         title={$t.labels.badge}
                                     >
-                                        {$t.labels.badge}
+                                        {copiedBadgeId === monitor.id
+                                            ? $t.labels.copied
+                                            : $t.labels.badge}
                                     </button>
                                     <button
                                         type="button"

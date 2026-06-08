@@ -7,10 +7,8 @@
     import { t, toggleLocale, locale } from "$lib/i18n";
     import type { PageData } from "./$types";
 
-    // Svelte 5 语法
     let { data }: { data: PageData } = $props();
 
-    // 状态管理 (Svelte 5 语法)
     let expandedId: string | null = $state(null);
     function toggleExpand(id: string) {
         const nextId = expandedId === id ? null : id;
@@ -38,7 +36,6 @@
         }
     }
 
-    // 1. 安全的在线率计算
     function calculateUptime(heartbeats: any[]): string {
         if (
             !heartbeats ||
@@ -61,7 +58,6 @@
               : "text-red-500";
     }
 
-    // 2. 🛡️ 核心：超级健壮的数据分组函数 (任何坏数据都会被过滤)
     function groupDataSafely(list: any[], timeField: string) {
         if (!list || !Array.isArray(list)) return {};
 
@@ -74,19 +70,17 @@
             try {
                 const date = new Date(timestamp * 1000);
                 if (isValid(date)) {
-                    // 强制使用 ISO 格式作为 Key，防止中文混入 Key 导致渲染逻辑混乱
                     const key = format(date, "yyyy-MM-dd");
                     if (!groups[key]) groups[key] = [];
                     groups[key].push(item);
                 }
             } catch (e) {
-                // 忽略坏数据
+                // Ignore invalid rows.
             }
             return groups;
         }, {});
     }
 
-    // 按日期分组维护记录
     let maintenanceByDate = $derived.by(() => {
         const history = data?.maintenanceHistory || [];
         return history.reduce((groups: Record<string, any[]>, item) => {
@@ -101,25 +95,22 @@
         groupDataSafely(data.incidents, "startedAt"),
     );
 
-    // 3. 🛡️ 核心：日期显示格式化 (解决中英文日期问题)
     function formatDateHeader(dateKey: string, currentLocale: string) {
         if (!dateKey) return "";
         try {
-            const date = new Date(dateKey); // dateKey 是 yyyy-MM-dd
+            const date = new Date(dateKey);
             if (!isValid(date)) return dateKey;
 
-            // 如果是中文或日文，返回: 2025年12月13日
             if (currentLocale === "zh" || currentLocale === "ja") {
-                return format(date, "yyyy年MM月dd日");
+                return format(date, "yyyy\u5e74MM\u6708dd\u65e5");
             }
-            // 英文返回: Dec 13, 2025
+
             return format(date, "MMM dd, yyyy");
         } catch (e) {
             return dateKey;
         }
     }
 
-    // 4. 辅助：安全的时间格式化 (用于 HH:mm)
     function safeTime(ts: number, fmt: string = "HH:mm") {
         if (!ts) return "--:--";
         try {
@@ -142,8 +133,8 @@
     }
 </script>
 
-<div class="min-h-screen bg-[#0a0a0a] text-white font-mono p-8">
-    <div class="max-w-3xl mx-auto">
+<div class="min-h-screen bg-[#0a0a0a] text-white font-mono px-4 py-6 md:p-8">
+    <div class="max-w-5xl mx-auto">
         {#if data.globalAnnouncements && data.globalAnnouncements.length > 0}
             <div class="mb-8 space-y-2">
                 {#each data.globalAnnouncements as announcement}
@@ -216,9 +207,7 @@
             </div>
         {/if}
 
-        <header
-            class="mb-12 border-b border-neutral-800 pb-6 flex justify-between items-start"
-        >
+        <header class="mb-10 border-b border-neutral-800 pb-6 flex flex-col sm:flex-row justify-between gap-4 sm:items-start">
             <div>
                 <h1
                     class="text-4xl font-bold text-green-500 mb-2 tracking-tighter"
@@ -244,19 +233,19 @@
                     class:border-green-500={expandedId === monitor.id}
                 >
                     <div
-                        class="p-5 flex items-center justify-between cursor-pointer hover:bg-neutral-800/50 transition-colors group"
+                        class="p-4 md:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between cursor-pointer hover:bg-neutral-800/50 transition-colors group"
                         onclick={() => toggleExpand(monitor.id)}
                         onkeydown={(e) =>
                             e.key === "Enter" && toggleExpand(monitor.id)}
                         tabindex="0"
                         role="button"
                     >
-                        <div>
-                            <div class="flex items-center gap-3 mb-1">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2 mb-1">
                                 <a
                                     href={`/monitor/${monitor.id}`}
                                     onclick={(e) => e.stopPropagation()}
-                                    class="font-bold text-lg text-gray-200 group-hover:text-white hover:text-green-400 transition-colors"
+                                    class="font-bold text-lg text-gray-200 group-hover:text-white hover:text-green-400 transition-colors break-words"
                                 >
                                     {monitor.name}
                                 </a>
@@ -278,9 +267,9 @@
                                 href={monitor.url}
                                 target="_blank"
                                 onclick={(e) => e.stopPropagation()}
-                                class="text-xs text-gray-500 hover:text-green-400 transition-colors flex items-center gap-1"
+                                class="text-xs text-gray-500 hover:text-green-400 transition-colors inline-flex items-center gap-1 max-w-full break-all"
                             >
-                                {monitor.url} ↗
+                                {monitor.url} <span aria-hidden="true">&rarr;</span>
                             </a>
                         </div>
 
@@ -316,14 +305,12 @@
                                 <div
                                     class="text-[10px] text-gray-700 text-center"
                                 >
-                                    No Data
+                                    {$t.sections.no_data_24h}
                                 </div>
                             {/if}
                         </div>
 
-                        <div
-                            class="flex flex-col items-end gap-1 min-w-[100px]"
-                        >
+                        <div class="flex flex-col items-start sm:items-end gap-1 min-w-[100px]">
                             {#if monitor.uptimeStats && monitor.uptimeStats.length > 0}
                                 {@const uptime = calculateUptime(
                                     monitor.uptimeStats,
@@ -559,18 +546,14 @@
                                 <div class="w-1.5 bg-yellow-500/80"></div>
 
                                 <div class="p-5 w-full">
-                                    <div
-                                        class="flex justify-between items-start"
-                                    >
-                                        <div>
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                                        <div class="min-w-0">
                                             <h4
                                                 class="font-bold text-gray-200 text-lg mb-1"
                                             >
                                                 {item.title}
                                             </h4>
-                                            <div
-                                                class="text-sm text-gray-500 font-mono mt-2"
-                                            >
+                                            <div class="text-sm text-gray-500 font-mono mt-2 flex flex-wrap items-center gap-y-1">
                                                 {format(
                                                     item.startTime * 1000,
                                                     "yyyy-MM-dd HH:mm",
@@ -578,7 +561,7 @@
                                                     item.endTime * 1000,
                                                     "yyyy-MM-dd HH:mm",
                                                 )}
-                                                <span class="mx-2">·</span>
+                                                <span class="mx-2 text-neutral-700">&middot;</span>
                                                 {$t.labels.duration}: {Math.ceil(
                                                     (item.endTime -
                                                         item.startTime) /
@@ -588,9 +571,7 @@
                                             </div>
                                         </div>
 
-                                        <div
-                                            class="flex flex-col items-end gap-1"
-                                        >
+                                        <div class="flex flex-col items-start sm:items-end gap-1">
                                             {#if Date.now() / 1000 < item.startTime}
                                                 <span
                                                     class="text-[10px] bg-blue-900/30 text-blue-400 px-2 py-1 rounded border border-blue-900/50"
@@ -645,11 +626,11 @@
                             <div
                                 class="bg-neutral-900 border border-neutral-800 rounded-lg p-5"
                             >
-                                <div class="flex items-center gap-2 mb-2">
+                                <div class="flex items-start gap-2 mb-2">
                                     <span
                                         class="h-2 w-2 rounded-full bg-red-500"
                                     ></span>
-                                    <h4 class="font-bold text-gray-200">
+                                    <h4 class="font-bold text-gray-200 break-all">
                                         {item.url || $t.sections.unknown_url} - {$t
                                             .status.down}
                                     </h4>
@@ -664,7 +645,7 @@
                                 </div>
 
                                 <div
-                                    class="bg-neutral-800/50 rounded p-3 text-xs text-gray-400 flex items-center gap-2"
+                                    class="bg-neutral-800/50 rounded p-3 text-xs text-gray-400 flex items-start gap-2"
                                 >
                                     {#if item.resolvedAt}
                                         <svg
@@ -684,7 +665,7 @@
                                         >
                                             <span>{$t.status.resolved}</span>
                                             <span class="text-neutral-600"
-                                                >·</span
+                                                >&middot;</span
                                             >
                                             <span>{$t.detail.resolved_at}</span>
                                             <strong class="text-gray-300">
@@ -697,7 +678,7 @@
                                                     : "--"}
                                             </strong>
                                             <span class="text-neutral-600"
-                                                >·</span
+                                                >&middot;</span
                                             >
                                             <span>{$t.detail.resolved_after}</span>
                                             <strong class="text-gray-300">

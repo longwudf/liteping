@@ -26,7 +26,7 @@ const translations: Record<string, any> = {
             unknown: "Unknown"
         },
         labels: {
-            get: "GET", post: "POST", head: "HEAD", ms: "ms", duration: "Duration", mins: "mins", interval: "Interval",
+            get: "GET", post: "POST", head: "HEAD", ms: "ms", duration: "Duration", mins: "mins", days: "days", interval: "Interval",
             uptime: "Uptime",
             latency: "Latency",
             last_check: "Last Check",
@@ -47,7 +47,8 @@ const translations: Record<string, any> = {
             back_dashboard: "Back to Dashboard",
             max: "Max",
             avg: "Avg",
-            view_details: "View Details"
+            view_details: "View Details",
+            copied: "Copied"
         },
         sections: {
             past_incidents: "Past Incidents",
@@ -130,7 +131,10 @@ const translations: Record<string, any> = {
             btn_pause: "Pause",
             btn_resume: "Resume",
             btn_delete: "Delete",
-            confirm_delete: "Are you sure?"
+            btn_move_up: "Move up",
+            btn_move_down: "Move down",
+            confirm_delete: "Are you sure?",
+            order_save_failed: "Failed to save monitor order."
         }
     },
     zh: {
@@ -144,7 +148,7 @@ const translations: Record<string, any> = {
             unknown: "未知"
         },
         labels: {
-            get: "GET", post: "POST", head: "HEAD", ms: "毫秒", duration: "持续时间", mins: "分", interval: "间隔",
+            get: "GET", post: "POST", head: "HEAD", ms: "毫秒", duration: "持续时间", mins: "分", days: "天", interval: "间隔",
             uptime: "可用率",
             latency: "延迟",
             last_check: "最后检查",
@@ -165,7 +169,8 @@ const translations: Record<string, any> = {
             back_dashboard: "返回仪表盘",
             max: "最大",
             avg: "平均",
-            view_details: "查看详情"
+            view_details: "查看详情",
+            copied: "已复制"
         },
         sections: {
             past_incidents: "过往事故",
@@ -248,7 +253,10 @@ const translations: Record<string, any> = {
             btn_pause: "暂停",
             btn_resume: "恢复",
             btn_delete: "删除",
-            confirm_delete: "确定删除？"
+            btn_move_up: "\u4e0a\u79fb",
+            btn_move_down: "\u4e0b\u79fb",
+            confirm_delete: "确定删除？",
+            order_save_failed: "\u76d1\u63a7\u987a\u5e8f\u4fdd\u5b58\u5931\u8d25\u3002"
         }
     },
     ja: {
@@ -262,7 +270,7 @@ const translations: Record<string, any> = {
             unknown: "不明"
         },
         labels: {
-            get: "GET", post: "POST", head: "HEAD", ms: "ms", duration: "期間", mins: "分", interval: "間隔",
+            get: "GET", post: "POST", head: "HEAD", ms: "ms", duration: "期間", mins: "分", days: "日", interval: "間隔",
             uptime: "稼働率",
             latency: "レイテンシ",
             last_check: "最終確認",
@@ -283,7 +291,8 @@ const translations: Record<string, any> = {
             back_dashboard: "ダッシュボードに戻る",
             max: "最大",
             avg: "平均",
-            view_details: "詳細を見る"
+            view_details: "詳細を見る",
+            copied: "コピー済み"
         },
         sections: {
             past_incidents: "過去の障害",
@@ -366,7 +375,10 @@ const translations: Record<string, any> = {
             btn_pause: "停止",
             btn_resume: "再開",
             btn_delete: "削除",
-            confirm_delete: "削除しますか？"
+            btn_move_up: "\u4e0a\u3078\u79fb\u52d5",
+            btn_move_down: "\u4e0b\u3078\u79fb\u52d5",
+            confirm_delete: "削除しますか？",
+            order_save_failed: "\u30e2\u30cb\u30bf\u30fc\u9806\u5e8f\u306e\u4fdd\u5b58\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002"
         }
     }
 };

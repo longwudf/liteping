@@ -38,8 +38,8 @@
 </svelte:head>
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-mono flex flex-col">
-	<header class="border-b border-neutral-800 p-4">
-		<div class="max-w-5xl mx-auto flex justify-between items-center">
+	<header class="border-b border-neutral-800 px-4 py-3 sm:p-4">
+		<div class="max-w-5xl mx-auto flex flex-wrap justify-between items-center gap-3">
 			<a
 				href="/"
 				class="text-xl font-bold text-green-500 tracking-tighter hover:text-green-400"
@@ -86,9 +86,7 @@
 		<slot />
 	</main>
 
-	<footer
-		class="border-t border-neutral-800 p-8 mt-12 flex flex-col items-center gap-4 text-xs text-neutral-600"
-	>
+	<footer class="border-t border-neutral-800 px-4 py-8 mt-12 flex flex-col items-center gap-4 text-xs text-neutral-600">
 		<p>{$page.data.settings?.footer_text || `LitePing_ v1.1.0 (c) ${new Date().getFullYear()}`}</p>
 		<div class="flex gap-4">
 			<a
