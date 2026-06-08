@@ -25,6 +25,11 @@ function getMonitorMethod(value: string | null) {
   return value === 'GET' || value === 'HEAD' || value === 'POST' ? value : 'HEAD';
 }
 
+function getMonitorIntervalMinutes(value: number | null) {
+  const interval = Number(value ?? 60);
+  return Number.isInteger(interval) && interval >= 1 && interval <= 1440 ? interval : 60;
+}
+
 type Bindings = {
   DB: D1Database;
   NOTIFY_LANGUAGE?: string;
@@ -43,7 +48,7 @@ app.get('/api/status', async (c) => {
   return c.json(result);
 });
 
-// --- Core Cron Logic (Runs every minute) ---
+// --- Core Cron Logic (Runs every minute; each monitor enforces its own interval) ---
 
 export default {
   fetch: app.fetch,
@@ -51,12 +56,29 @@ export default {
   async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     const db = drizzle(env.DB);
 
+    const now = Math.floor(Date.now() / 1000);
+
     // 1. Get all active monitors
     const targets = await db.select().from(monitors).where(eq(monitors.active, true)).all();
+    const latestHeartbeats = targets.length > 0
+      ? await db.select({
+        monitorId: heartbeats.monitorId,
+        lastCheckedAt: sql<number>`MAX(${heartbeats.timestamp})`
+      })
+        .from(heartbeats)
+        .groupBy(heartbeats.monitorId)
+        .all()
+      : [];
 
-    if (targets.length === 0) {
-      return;
-    }
+    const lastHeartbeatMap = new Map(
+      latestHeartbeats.map(row => [row.monitorId, Number(row.lastCheckedAt) || 0])
+    );
+    const dueTargets = targets.filter(target => {
+      const lastCheckedAt = lastHeartbeatMap.get(target.id);
+      return !lastCheckedAt || now - lastCheckedAt >= getMonitorIntervalMinutes(target.interval) * 60;
+    });
+
+    if (dueTargets.length > 0) {
 
     // Detect current Worker location
     // Cron Trigger doesn't have request.cf, so we fetch Cloudflare trace
@@ -73,7 +95,6 @@ export default {
     }
 
     // Get active maintenance windows
-    const now = Math.floor(Date.now() / 1000);
     const activeMaintenances = await db.select()
       .from(maintenance)
       .where(and(lt(maintenance.startTime, now), gt(maintenance.endTime, now)))
@@ -91,7 +112,7 @@ export default {
 
     // 2. Execute Ping checks concurrently (Batched)
     const results = [];
-    const batches = chunk(targets, 10);
+    const batches = chunk(dueTargets, 10);
 
     for (const batch of batches) {
       const batchResults = await Promise.all(batch.map(async (target) => {
@@ -209,6 +230,8 @@ export default {
       for (const batch of batches) {
         await db.insert(heartbeats).values(batch).execute();
       }
+    }
+
     }
 
     // 4. Data Retention & Aggregation

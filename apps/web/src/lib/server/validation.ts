@@ -124,6 +124,11 @@ export function stringValue(value: unknown) {
 }
 
 function normalizeInterval(value: unknown) {
-	const interval = Number(value ?? 60);
-	return Number.isInteger(interval) && interval >= 1 && interval <= 1440 ? interval : 60;
+	const raw = value === undefined || value === null || value === '' ? '60' : stringValue(value);
+	const interval = Number(raw);
+	if (!Number.isInteger(interval) || interval < 1 || interval > 1440) {
+		throw new Error('Monitor interval must be an integer from 1 to 1440 minutes');
+	}
+
+	return interval;
 }

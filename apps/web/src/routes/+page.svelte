@@ -133,6 +133,13 @@
         if (!startedAt || !resolvedAt || resolvedAt < startedAt) return "--";
         return Math.max(1, Math.ceil((resolvedAt - startedAt) / 60));
     }
+
+    function monitorIntervalMinutes(value: unknown) {
+        const interval = Number(value ?? 60);
+        return Number.isInteger(interval) && interval >= 1 && interval <= 1440
+            ? interval
+            : 60;
+    }
 </script>
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-mono p-8">
@@ -258,6 +265,13 @@
                                 >
                                     {$t.labels[monitor.method.toLowerCase()] ||
                                         monitor.method}
+                                </span>
+                                <span
+                                    class="text-[10px] px-2 py-0.5 rounded bg-neutral-950 text-gray-500 border border-neutral-800"
+                                    title={$t.labels.interval}
+                                >
+                                    {monitorIntervalMinutes(monitor.interval)}
+                                    {$t.labels.mins}
                                 </span>
                             </div>
                             <a

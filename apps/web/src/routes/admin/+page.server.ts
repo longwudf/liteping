@@ -111,6 +111,7 @@ export const actions: Actions = {
         name: formData.get('name'),
         url: formData.get('url'),
         method: formData.get('method'),
+        interval: formData.get('interval'),
         active: true
       });
     } catch (e) {
@@ -160,6 +161,7 @@ export const actions: Actions = {
         name: formData.get('name'),
         url: formData.get('url'),
         method: formData.get('method'),
+        interval: formData.get('interval'),
         active: formData.get('active') === 'on'
       });
     } catch (e) {

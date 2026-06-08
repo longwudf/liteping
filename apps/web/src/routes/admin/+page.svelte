@@ -78,11 +78,16 @@
         fetch('?/save_order', {
             method: 'POST',
             body: formData
-        }).then(() => {
+        }).then((response) => {
+            if (!response.ok) {
+                throw new Error("Failed to save monitor order");
+            }
             // 乐观更新：虽然页面会刷新，但这里可以先不做啥，SvelteKit enhance 会处理
             // 但因为我们是手动 fetch，需要手动刷新数据或者等待
             // 为了简单，直接刷新页面
             window.location.reload();
+        }).catch(() => {
+            alert("Failed to save monitor order.");
         });
     }
 
@@ -155,6 +160,13 @@
             `input[name="${name}"]`,
         ) as HTMLInputElement;
         if (el) el.value = iso;
+    }
+
+    function monitorIntervalMinutes(value: unknown) {
+        const interval = Number(value ?? 60);
+        return Number.isInteger(interval) && interval >= 1 && interval <= 1440
+            ? interval
+            : 60;
     }
 </script>
 
@@ -943,6 +955,15 @@
             <h2 class="text-lg font-bold mb-4 text-gray-300">
                 {$t.admin.sec_add_target}
             </h2>
+            <datalist id="monitor-interval-presets">
+                <option value="1"></option>
+                <option value="5"></option>
+                <option value="10"></option>
+                <option value="30"></option>
+                <option value="60"></option>
+                <option value="360"></option>
+                <option value="1440"></option>
+            </datalist>
             <form
                 method="POST"
                 action="?/create"
@@ -950,7 +971,7 @@
                 class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end"
             >
                 <input type="hidden" name="csrf" value={csrfToken} />
-                <div class="md:col-span-4 space-y-1">
+                <div class="md:col-span-3 space-y-1">
                     <label class="block">
                         <span class="text-xs text-gray-500 block"
                             >{$t.admin.label_name}</span
@@ -964,7 +985,7 @@
                         />
                     </label>
                 </div>
-                <div class="md:col-span-5 space-y-1">
+                <div class="md:col-span-4 space-y-1">
                     <label class="block">
                         <span class="text-xs text-gray-500 block"
                             >{$t.admin.label_url}</span
@@ -991,6 +1012,34 @@
                             <option value="GET">GET</option>
                             <option value="POST">POST</option>
                         </select>
+                    </label>
+                </div>
+                <div class="md:col-span-2 space-y-1">
+                    <label class="block">
+                        <span class="text-xs text-gray-500 block"
+                            >{$t.admin.label_interval}</span
+                        >
+                        <div
+                            class="flex items-center bg-black border border-neutral-700 rounded focus-within:border-green-500"
+                        >
+                            <input
+                                name="interval"
+                                type="number"
+                                min="1"
+                                max="1440"
+                                step="1"
+                                value="60"
+                                list="monitor-interval-presets"
+                                class="w-full bg-transparent px-3 py-2 outline-none text-sm"
+                                required
+                            />
+                            <span class="pr-3 text-xs text-neutral-500"
+                                >{$t.labels.mins}</span
+                            >
+                        </div>
+                        <span class="text-[10px] text-neutral-600"
+                            >{$t.admin.help_interval}</span
+                        >
                     </label>
                 </div>
                 <div class="md:col-span-1">
@@ -1040,7 +1089,8 @@
                 <div class="col-span-1 text-center">{$t.detail.status}</div>
                 <div class="col-span-3">{$t.labels.name}</div>
                 <div class="col-span-3">{$t.labels.url}</div>
-                <div class="col-span-2">{$t.labels.method}</div>
+                <div class="col-span-1">{$t.labels.method}</div>
+                <div class="col-span-1">{$t.labels.interval}</div>
                 <div class="col-span-2 text-right">{$t.labels.action}</div>
             </div>
 
@@ -1085,7 +1135,7 @@
                                 </label>
                             </div>
 
-                            <div class="col-span-3">
+                            <div class="col-span-2">
                                 <input
                                     name="name"
                                     value={monitor.name}
@@ -1093,7 +1143,7 @@
                                 />
                             </div>
 
-                            <div class="col-span-4">
+                            <div class="col-span-3">
                                 <input
                                     name="url"
                                     value={monitor.url}
@@ -1101,7 +1151,7 @@
                                 />
                             </div>
 
-                            <div class="col-span-2">
+                            <div class="col-span-1">
                                 <select
                                     name="method"
                                     value={monitor.method}
@@ -1110,6 +1160,28 @@
                                     <option>HEAD</option><option>GET</option
                                     ><option>POST</option>
                                 </select>
+                            </div>
+
+                            <div class="col-span-2">
+                                <div
+                                    class="flex items-center bg-black border border-green-500/50 rounded"
+                                >
+                                    <input
+                                        name="interval"
+                                        type="number"
+                                        min="1"
+                                        max="1440"
+                                        step="1"
+                                        list="monitor-interval-presets"
+                                        value={monitorIntervalMinutes(
+                                            monitor.interval,
+                                        )}
+                                        class="w-full bg-transparent px-2 py-1 text-sm text-white outline-none"
+                                    />
+                                    <span class="pr-2 text-[10px] text-neutral-500"
+                                        >{$t.labels.mins}</span
+                                    >
+                                </div>
                             </div>
 
                             <div class="col-span-2 flex justify-end gap-2">
@@ -1164,9 +1236,16 @@
                                 {monitor.url}
                             </div>
                             <div
-                                class="col-span-2 text-xs font-mono bg-neutral-800 inline-block w-fit px-1 rounded text-gray-300"
+                                class="col-span-1 text-xs font-mono bg-neutral-800 inline-block w-fit px-1 rounded text-gray-300"
                             >
                                 {monitor.method}
+                            </div>
+                            <div
+                                class="col-span-1 text-xs text-neutral-400 font-mono"
+                                title={$t.admin.help_interval}
+                            >
+                                {monitorIntervalMinutes(monitor.interval)}
+                                {$t.labels.mins}
                             </div>
 
                             <div
