@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { monitors, heartbeats, incidents, announcements, maintenance } from '../../../../packages/db/src/schema';
 import { desc, eq, and, lt, gt, isNull } from 'drizzle-orm';
+import { isMissingTableError } from '$lib/server/db';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, platform }) => {
@@ -29,7 +30,9 @@ export const load: PageServerLoad = async ({ locals, platform }) => {
             .orderBy(desc(monitors.weight), desc(monitors.createdAt))
             .all()
             .catch(e => {
-            console.error("Failed to load monitors:", e);
+            if (!isMissingTableError(e)) {
+                console.error("Failed to load monitors:", e);
+            }
             return [];
         });
 

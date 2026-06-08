@@ -8,16 +8,18 @@
 	$: if ($page.data.lang) {
 		locale.set($page.data.lang as Locale);
 	}
+
+	$: pageTitle = $page.data.settings?.site_title || `LitePing - ${$t.title}`;
 </script>
 
 <svelte:head>
-	<title>{$page.data.settings?.site_title || $t.title}</title>
+	<title>{pageTitle}</title>
 	<meta name="description" content={$page.data.settings?.site_desc || $t.description} />
 
 	<!-- Open Graph / Facebook -->
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={$page.url.href} />
-	<meta property="og:title" content={$page.data.settings?.site_title || $t.title} />
+	<meta property="og:title" content={pageTitle} />
 	<meta property="og:description" content={$page.data.settings?.site_desc || $t.description} />
 	<meta
 		property="og:image"
@@ -27,7 +29,7 @@
 	<!-- Twitter -->
 	<meta property="twitter:card" content="summary_large_image" />
 	<meta property="twitter:url" content={$page.url.href} />
-	<meta property="twitter:title" content={$page.data.settings?.site_title || $t.title} />
+	<meta property="twitter:title" content={pageTitle} />
 	<meta property="twitter:description" content={$page.data.settings?.site_desc || $t.description} />
 	<meta
 		property="twitter:image"
@@ -87,7 +89,7 @@
 	<footer
 		class="border-t border-neutral-800 p-8 mt-12 flex flex-col items-center gap-4 text-xs text-neutral-600"
 	>
-		<p>{$page.data.settings?.footer_text || `LitePing_ v2.0 © ${new Date().getFullYear()}`}</p>
+		<p>{$page.data.settings?.footer_text || `LitePing_ v1.1.0 (c) ${new Date().getFullYear()}`}</p>
 		<div class="flex gap-4">
 			<a
 				href="/rss.xml"

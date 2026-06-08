@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { notifiers } from '../../../../packages/db/src/schema';
 
@@ -49,20 +49,16 @@ export async function sendNotifications(
 // 1. Discord
 async function sendDiscord(url: string, payload: NotificationPayload) {
     const color = payload.status === 'DOWN' ? 15548997 : 5763719; // Red / Green
-    await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            username: 'LitePing Bot',
-            embeds: [
-                {
-                    title: payload.title,
-                    description: payload.description,
-                    color: color,
-                    timestamp: new Date().toISOString(),
-                },
-            ],
-        }),
+    await postJson(url, {
+        username: 'LitePing Bot',
+        embeds: [
+            {
+                title: payload.title,
+                description: payload.description,
+                color: color,
+                timestamp: new Date().toISOString(),
+            },
+        ],
     });
 }
 
@@ -75,33 +71,25 @@ async function sendTelegram(
     const icon = payload.status === 'DOWN' ? '🚨' : '✅';
     const text = `*${icon} ${payload.title}*\n\n${payload.description}`;
 
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            chat_id: chatId,
-            text: text,
-            parse_mode: 'Markdown',
-        }),
+    await postJson(`https://api.telegram.org/bot${token}/sendMessage`, {
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'Markdown',
     });
 }
 
 // 3. Slack
 async function sendSlack(url: string, payload: NotificationPayload) {
     const color = payload.status === 'DOWN' ? '#ef4444' : '#22c55e';
-    await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            attachments: [
-                {
-                    color: color,
-                    title: payload.title,
-                    text: payload.description,
-                    ts: Math.floor(Date.now() / 1000),
-                },
-            ],
-        }),
+    await postJson(url, {
+        attachments: [
+            {
+                color: color,
+                title: payload.title,
+                text: payload.description,
+                ts: Math.floor(Date.now() / 1000),
+            },
+        ],
     });
 }
 
@@ -110,9 +98,19 @@ async function sendCustomWebhook(
     url: string,
     payload: NotificationPayload
 ) {
-    await fetch(url, {
+    await postJson(url, payload);
+}
+
+async function postJson(url: string, body: unknown) {
+    const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(body),
     });
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        const detail = text ? `: ${text.slice(0, 200)}` : '';
+        throw new Error(`Notification endpoint returned HTTP ${response.status}${detail}`);
+    }
 }

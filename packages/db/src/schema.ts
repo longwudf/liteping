@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const monitors = sqliteTable("monitors", {
     id: text("id").primaryKey(),
@@ -16,7 +16,7 @@ export const heartbeats = sqliteTable("heartbeats", {
     id: integer("id").primaryKey({ autoIncrement: true }),
     monitorId: text("monitor_id")
         .notNull()
-        .references(() => monitors.id),
+        .references(() => monitors.id, { onDelete: 'cascade' }),
     status: integer("status").notNull(),
     latency: integer("latency").notNull(),
     timestamp: integer("timestamp").notNull(),
@@ -29,7 +29,7 @@ export const heartbeats = sqliteTable("heartbeats", {
 
 export const incidents = sqliteTable('incidents', {
     id: text('id').primaryKey(),
-    monitorId: text('monitor_id').notNull(),
+    monitorId: text('monitor_id').notNull().references(() => monitors.id, { onDelete: 'cascade' }),
     url: text('url').notNull(),
     cause: text('cause').notNull(),
     startedAt: integer('started_at').notNull(),
@@ -47,7 +47,7 @@ export const announcements = sqliteTable('announcements', {
 
 export const maintenance = sqliteTable('maintenance', {
     id: text('id').primaryKey(),
-    monitorId: text('monitor_id').notNull(),
+    monitorId: text('monitor_id').notNull().references(() => monitors.id, { onDelete: 'cascade' }),
     title: text('title').notNull(),
     startTime: integer('start_time').notNull(),
     endTime: integer('end_time').notNull(),
@@ -65,14 +65,14 @@ export const notifiers = sqliteTable('notifiers', {
 
 export const hourlyStats = sqliteTable("hourly_stats", {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    monitorId: text("monitor_id").notNull().references(() => monitors.id),
+    monitorId: text("monitor_id").notNull().references(() => monitors.id, { onDelete: 'cascade' }),
     timestamp: integer("timestamp").notNull(), // Start of the hour (unix timestamp)
     avgLatency: integer("avg_latency").notNull(),
     successCount: integer("success_count").notNull(),
     totalCount: integer("total_count").notNull(),
 }, (table) => {
     return {
-        idxStatsMonitorTime: index("idx_stats_monitor_time").on(table.monitorId, table.timestamp),
+        idxStatsMonitorTime: uniqueIndex("idx_stats_monitor_time").on(table.monitorId, table.timestamp),
     };
 });
 

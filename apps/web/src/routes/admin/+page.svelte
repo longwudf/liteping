@@ -5,6 +5,7 @@
     import type { PageData } from "./$types";
 
     let { data }: { data: PageData } = $props(); 
+    let csrfToken = $derived(data.csrfToken || "");
 
     let editingId: string | null = $state(null);
     let fileInput: HTMLInputElement;
@@ -72,6 +73,7 @@
         
         const formData = new FormData();
         formData.append('order', JSON.stringify(orderData));
+        formData.append('csrf', csrfToken);
         
         fetch('?/save_order', {
             method: 'POST',
@@ -117,9 +119,9 @@
     //  复制徽章 Markdown 代码
     function copyBadge(item: any) {
         const origin = window.location.origin;
-        const safeName = item.name.replace(/ /g, "%20");
+        const safeName = encodeURIComponent(item.name);
         const badgeUrl = `${origin}/api/badge/${item.id}?label=${safeName}`;
-        const markdown = `[![${item.name} Status](${badgeUrl})](${item.url})`;
+        const markdown = `[![${escapeMarkdownText(item.name)} Status](${badgeUrl})](${encodeMarkdownUrl(item.url)})`;
 
         navigator.clipboard
             .writeText(markdown)
@@ -129,6 +131,20 @@
             .catch(() => {
                 prompt("Copy this Markdown:", markdown);
             });
+    }
+
+    function confirmSubmit(event: SubmitEvent, message: string) {
+        if (!confirm(message)) {
+            event.preventDefault();
+        }
+    }
+
+    function escapeMarkdownText(value: string) {
+        return value.replace(/([\\[\]])/g, "\\$1");
+    }
+
+    function encodeMarkdownUrl(value: string) {
+        return encodeURI(value).replace(/\)/g, "%29");
     }
 
     function setNow(name: string) {
@@ -169,6 +185,7 @@
                     >{$t.admin.import}</button
                 >
                 <form method="POST" action="?/logout" use:enhance>
+                    <input type="hidden" name="csrf" value={csrfToken} />
                     <button
                         type="submit"
                         class="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 hover:bg-red-900/20 text-red-500/70 hover:text-red-400 text-xs rounded border border-neutral-800 hover:border-red-900/50 transition-all"
@@ -196,6 +213,7 @@
                     use:enhance
                     class="hidden"
                 >
+                    <input type="hidden" name="csrf" value={csrfToken} />
                     <input
                         bind:this={fileInput}
                         type="file"
@@ -227,6 +245,7 @@
                     use:enhance
                     class="grid grid-cols-1 md:grid-cols-2 gap-4"
                 >
+                    <input type="hidden" name="csrf" value={csrfToken} />
                     <div class="flex flex-col gap-1">
                         <label for="site_title" class="text-sm text-gray-400">{$t.admin.label_site_title}</label>
                         <input
@@ -299,6 +318,7 @@
                 {#each data.incidents as incident}
                     <div class="p-3 bg-neutral-900/50 border border-neutral-800 rounded">
                         <form method="POST" action="?/update_incident" use:enhance class="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                            <input type="hidden" name="csrf" value={csrfToken} />
                             <input type="hidden" name="id" value={incident.id} />
                             
                             <div class="flex-1 w-full">
@@ -321,7 +341,7 @@
                                     <button formaction="?/resolve_incident" class="text-green-500 hover:text-green-400 text-xs border border-green-500/30 px-2 py-1 rounded">{$t.status.resolved}</button>
                                 {/if}
                                 <button type="submit" class="text-blue-500 hover:text-blue-400 text-xs">{$t.admin.btn_save}</button>
-                                <button formaction="?/delete_incident" class="text-red-500 hover:text-red-400 text-xs ml-2">{$t.admin.btn_del}</button>
+                                <button formaction="?/delete_incident" onclick={(e) => !confirm($t.admin.confirm_delete) && e.preventDefault()} class="text-red-500 hover:text-red-400 text-xs ml-2">{$t.admin.btn_del}</button>
                             </div>
                         </form>
                     </div>
@@ -342,9 +362,10 @@
                     method="POST"
                     action="?/create_announcement"
                     use:enhance
-                    class="flex gap-2"
+                    class="flex flex-col md:flex-row gap-2"
                 >
-                    <div class="flex-1">
+                    <input type="hidden" name="csrf" value={csrfToken} />
+                    <div class="flex-1 space-y-2">
                         <input
                             name="title"
                             type="text"
@@ -352,9 +373,15 @@
                             class="w-full bg-black border border-neutral-700 rounded px-3 py-2 focus:border-blue-500 outline-none text-sm text-white"
                             required
                         />
+                        <textarea
+                            name="message"
+                            rows="2"
+                            placeholder={$t.admin.ph_message}
+                            class="w-full bg-black border border-neutral-700 rounded px-3 py-2 focus:border-blue-500 outline-none text-sm text-white resize-none"
+                        ></textarea>
                     </div>
 
-                    <div class="w-24">
+                    <div class="w-full md:w-28">
                         <select
                             name="type"
                             class="w-full bg-black border border-neutral-700 rounded px-2 py-2 focus:border-blue-500 outline-none text-sm text-white"
@@ -366,7 +393,7 @@
                     </div>
 
                     <button
-                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded text-xs transition-colors"
+                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-4 py-2 rounded text-xs transition-colors h-10"
                     >
                         {$t.admin.post}
                     </button>
@@ -391,7 +418,9 @@
                                     method="POST"
                                     action="?/delete_announcement"
                                     use:enhance
+                                    onsubmit={(e) => confirmSubmit(e, $t.admin.confirm_delete)}
                                 >
+                                    <input type="hidden" name="csrf" value={csrfToken} />
                                     <input
                                         type="hidden"
                                         name="id"
@@ -436,6 +465,7 @@
                 }}
                 class="flex flex-col md:flex-row gap-4 items-end"
             >
+                <input type="hidden" name="csrf" value={csrfToken} />
                 <div class="flex-1 w-full space-y-1">
                     <label class="text-[10px] text-gray-500">
                         <span>{$t.admin.label_service}</span>
@@ -592,7 +622,9 @@
                                     method="POST"
                                     action="?/delete_maintenance"
                                     use:enhance
+                                    onsubmit={(e) => confirmSubmit(e, $t.admin.confirm_delete)}
                                 >
+                                    <input type="hidden" name="csrf" value={csrfToken} />
                                     <input
                                         type="hidden"
                                         name="id"
@@ -630,6 +662,7 @@
                     use:enhance
                     class="space-y-4"
                 >
+                    <input type="hidden" name="csrf" value={csrfToken} />
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-1">
                             <label class="block">
@@ -762,11 +795,13 @@
                                             use:enhance
                                             class="inline"
                                             onsubmit={(e) =>
-                                                confirm(
+                                                confirmSubmit(
+                                                    e,
                                                     $t.sections
                                                         .delete_channel_confirm,
                                                 )}
                                         >
+                                            <input type="hidden" name="csrf" value={csrfToken} />
                                             <input
                                                 type="hidden"
                                                 name="id"
@@ -794,6 +829,7 @@
                                         };
                                     }}
                                 >
+                                    <input type="hidden" name="csrf" value={csrfToken} />
                                     <input
                                         type="hidden"
                                         name="id"
@@ -913,6 +949,7 @@
                 use:enhance
                 class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end"
             >
+                <input type="hidden" name="csrf" value={csrfToken} />
                 <div class="md:col-span-4 space-y-1">
                     <label class="block">
                         <span class="text-xs text-gray-500 block"
@@ -981,6 +1018,7 @@
                             <span class="text-xs text-gray-400 px-2">{selectedIds.length} {$t.admin.selected}</span>
                             <div class="h-4 w-px bg-neutral-800"></div>
                             <form method="POST" action="?/batch_action" use:enhance>
+                                <input type="hidden" name="csrf" value={csrfToken} />
                                 <input type="hidden" name="ids" value={selectedIds.join(',')} />
                                 <button type="submit" name="action" value="pause" class="text-xs text-yellow-500 hover:text-yellow-400 px-2 py-1">{$t.admin.btn_pause}</button>
                                 <button type="submit" name="action" value="resume" class="text-xs text-green-500 hover:text-green-400 px-2 py-1">{$t.admin.btn_resume}</button>
@@ -1028,6 +1066,7 @@
                             }}
                             class="grid grid-cols-12 gap-2 items-center"
                         >
+                            <input type="hidden" name="csrf" value={csrfToken} />
                             <input type="hidden" name="id" value={monitor.id} />
                             <div class="col-span-1"></div> <!-- Checkbox placeholder -->
                             <div class="col-span-1 flex justify-center">
@@ -1154,7 +1193,9 @@
                                     action="?/delete"
                                     use:enhance
                                     class="inline"
+                                    onsubmit={(e) => confirmSubmit(e, $t.admin.confirm_delete)}
                                 >
+                                    <input type="hidden" name="csrf" value={csrfToken} />
                                     <input
                                         type="hidden"
                                         name="id"

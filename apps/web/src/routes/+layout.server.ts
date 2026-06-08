@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { settings } from '../../../../packages/db/src/schema';
+import { isMissingTableError } from '$lib/server/db';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ locals, platform }) => {
@@ -14,7 +15,9 @@ export const load: LayoutServerLoad = async ({ locals, platform }) => {
                 return acc;
             }, {} as Record<string, string>);
         } catch (e) {
-            console.error("Failed to load settings:", e);
+            if (!isMissingTableError(e)) {
+                console.error("Failed to load settings:", e);
+            }
         }
     }
 

@@ -1,23 +1,53 @@
 import { drizzle } from 'drizzle-orm/d1';
-import { monitors, heartbeats, announcements, maintenance, notifiers, settings, incidents } from '../../../../../packages/db/src/schema';
+import {
+  announcements,
+  heartbeats,
+  hourlyStats,
+  incidents,
+  maintenance,
+  monitors,
+  notifiers,
+  settings
+} from '../../../../../packages/db/src/schema';
 import { desc, eq } from 'drizzle-orm';
-import { fail, redirect } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import type { PageServerLoad } from './$types';
+import { fail, redirect, type Cookies } from '@sveltejs/kit';
+import { clearAdminSessionCookie, createCsrfToken, isAdminAuthenticated, verifyCsrfToken } from '$lib/server/auth';
+import {
+  assertMaintenanceWindow,
+  isRecord,
+  normalizeAnnouncementType,
+  normalizeNotifierType,
+  normalizeRetentionDays,
+  normalizeWebhookUrl,
+  parseMonitorInput,
+  parseUnixTimestamp,
+  stringValue
+} from '$lib/server/validation';
+import type { Actions, PageServerLoad } from './$types';
 
-// --- 1. 读取数据 ---
+type Database = ReturnType<typeof drizzle>;
+
+const defaultData = {
+  monitors: [],
+  globalAnnouncements: [],
+  maintenance: [],
+  incidents: [],
+  notifiers: [],
+  settings: {}
+};
+
 export const load: PageServerLoad = async ({ platform, cookies, url }) => {
-  const session = cookies.get('liteping_session');
-  if (session !== env.ADMIN_PASSWORD) {
-    throw redirect(303, `/login?redirectTo=${url.pathname}`);
+  if (!(await isAdminAuthenticated(cookies))) {
+    throw redirect(303, `/login?redirectTo=${encodeURIComponent(url.pathname + url.search)}`);
   }
 
-  if (!platform?.env?.DB) {
-    console.error("Admin Load Error: No DB binding found.");
-    return { monitors: [], globalAnnouncements: [], incidents: [], maintenance: [] };
-  }
+  const csrfToken = createCsrfToken(cookies, url.protocol === 'https:');
 
-  const db = drizzle(platform.env.DB);
+  const db = getDb(platform);
+  if (!db) {
+    console.error('Admin Load Error: No DB binding found.');
+    return { ...defaultData, csrfToken };
+  }
 
   try {
     const allMonitors = await db.select()
@@ -48,7 +78,6 @@ export const load: PageServerLoad = async ({ platform, cookies, url }) => {
       .orderBy(desc(notifiers.createdAt))
       .all();
 
-    // Load settings
     const settingsList = await db.select().from(settings).all();
     const settingsMap = settingsList.reduce((acc, item) => {
       acc[item.key] = item.value;
@@ -61,222 +90,190 @@ export const load: PageServerLoad = async ({ platform, cookies, url }) => {
       maintenance: maintenanceList,
       incidents: incidentList,
       notifiers: notifierList,
-      settings: settingsMap
+      settings: settingsMap,
+      csrfToken
     };
   } catch (e) {
-    console.error("Admin Load Error:", e);
-    return { monitors: [], globalAnnouncements: [], incidents: [], maintenance: [] };
+    console.error('Admin Load Error:', e);
+    return { ...defaultData, csrfToken };
   }
 };
 
-// --- 2. 增删改查逻辑 ---
-export const actions = {
-  // 创建
+export const actions: Actions = {
   create: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
+
+    let monitorInput;
+
+    try {
+      monitorInput = parseMonitorInput({
+        name: formData.get('name'),
+        url: formData.get('url'),
+        method: formData.get('method'),
+        active: true
+      });
+    } catch (e) {
+      return badRequest(e);
     }
 
-    if (!platform?.env?.DB) return fail(500, { message: "No DB" });
-    
     try {
-      const formData = await request.formData();
-      const name = formData.get('name') as string;
-      const url = formData.get('url') as string;
-      const method = (formData.get('method') as string) || 'HEAD';
-
-      if (!name || !url) return fail(400, { message: "Missing fields" });
-
-      const db = drizzle(platform.env.DB);
       await db.insert(monitors).values({
         id: crypto.randomUUID(),
-        name,
-        url,
-        method: method as any,
-        active: true,
-        interval: 60,
+        ...monitorInput,
         createdAt: Math.floor(Date.now() / 1000)
       }).execute();
+
       return { success: true };
-    } catch (e: any) {
-      console.error("Create Failed:", e);
-      return fail(500, { message: e.message || "Failed to create monitor" });
+    } catch (e) {
+      console.error('Create Failed:', e);
+      return fail(500, { message: 'Failed to create monitor' });
     }
   },
 
-  // 删除
   delete: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
-    }
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    if (!platform?.env?.DB) return fail(500, { message: "No DB" });
-    
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
+
     try {
-      const formData = await request.formData();
-      const id = formData.get('id') as string;
-
-      if (!id) return fail(400, { message: "Missing ID" });
-
-      const db = drizzle(platform.env.DB);
-      await db.delete(heartbeats).where(eq(heartbeats.monitorId, id)).execute();
-      await db.delete(monitors).where(eq(monitors.id, id)).execute();
+      await deleteMonitorCascade(db, id);
       return { success: true };
-    } catch (e: any) {
-      console.error("Delete Failed:", e);
-      return fail(500, { message: e.message || "Failed to delete monitor" });
+    } catch (e) {
+      console.error('Delete Failed:', e);
+      return fail(500, { message: 'Failed to delete monitor' });
     }
   },
 
-  // 更新
   update: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
+
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
+
+    let monitorInput;
+    try {
+      monitorInput = parseMonitorInput({
+        name: formData.get('name'),
+        url: formData.get('url'),
+        method: formData.get('method'),
+        active: formData.get('active') === 'on'
+      });
+    } catch (e) {
+      return badRequest(e);
     }
 
-    if (!platform?.env?.DB) return fail(500, { message: "No DB" });
-
     try {
-      const formData = await request.formData();
-
-      const id = formData.get('id') as string;
-      const name = formData.get('name') as string;
-      const url = formData.get('url') as string;
-      const method = formData.get('method') as string;
-      const active = formData.get('active') === 'on';
-
-      if (!id || !url || !name) {
-        return fail(400, { message: "Missing fields" });
-      }
-
-      const db = drizzle(platform.env.DB);
       await db.update(monitors)
-        .set({ name, url, method: method as any, active })
+        .set(monitorInput)
         .where(eq(monitors.id, id))
         .execute();
 
       return { success: true };
-    } catch (e: any) {
-      console.error("Update Failed:", e);
-      return fail(500, { message: e.message });
+    } catch (e) {
+      console.error('Update Failed:', e);
+      return fail(500, { message: 'Failed to update monitor' });
     }
   },
 
-  // 导入
   import: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
-    }
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    if (!platform?.env?.DB) return fail(500);
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-
-    if (!file || file.size === 0) return fail(400);
+    const file = formData.get('file') as File | null;
+    if (!file || file.size === 0) return fail(400, { message: 'Missing import file' });
 
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!Array.isArray(data)) return fail(400);
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data)) return fail(400, { message: 'Backup file must be an array' });
 
-      const db = drizzle(platform.env.DB);
       let count = 0;
-
       for (const item of data) {
-        if (!item.name || !item.url) continue;
-        await db.insert(monitors).values({
-          id: crypto.randomUUID(),
-          name: item.name,
-          url: item.url,
-          method: item.method || 'HEAD',
-          active: item.active !== false,
-          interval: item.interval || 60,
-          createdAt: Math.floor(Date.now() / 1000)
-        }).execute();
-        count++;
+        if (!isRecord(item)) continue;
+
+        try {
+          const monitorInput = parseMonitorInput({
+            name: item.name,
+            url: item.url,
+            method: item.method,
+            interval: item.interval,
+            active: item.active
+          });
+
+          await db.insert(monitors).values({
+            id: crypto.randomUUID(),
+            ...monitorInput,
+            createdAt: Math.floor(Date.now() / 1000)
+          }).execute();
+          count += 1;
+        } catch (e) {
+          console.warn('Skipped invalid monitor during import:', e);
+        }
       }
 
       return { success: true, count };
     } catch (e) {
-      console.error("Import failed", e);
-      return fail(500);
+      console.error('Import failed:', e);
+      return fail(400, { message: 'Invalid backup file' });
     }
   },
 
-  // 公告创建
   create_announcement: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
+
+    const title = stringValue(formData.get('title')).trim();
+    const message = stringValue(formData.get('message')).trim();
+
+    if (!title) return fail(400, { message: 'Title is required' });
+
+    try {
+      await db.insert(announcements).values({
+        id: crypto.randomUUID(),
+        title,
+        message: message || null,
+        type: normalizeAnnouncementType(formData.get('type')),
+        active: true,
+        createdAt: Math.floor(Date.now() / 1000)
+      }).execute();
+
+      return { success: true };
+    } catch (e) {
+      console.error('Create Announcement Failed:', e);
+      return fail(500, { message: 'Failed to create announcement' });
     }
-
-    if (!platform?.env?.DB) return fail(500);
-    const formData = await request.formData();
-    const title = formData.get('title') as string;
-    const type = (formData.get('type') as string) || 'info';
-
-    if (!title) return fail(400);
-
-    const db = drizzle(platform.env.DB);
-    await db.insert(announcements).values({
-      id: crypto.randomUUID(),
-      title,
-      type,
-      active: true,
-      createdAt: Math.floor(Date.now() / 1000)
-    }).execute();
-    return { success: true };
   },
 
-  // 公告删除
   delete_announcement: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
-    }
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    if (!platform?.env?.DB) return fail(500);
-    const formData = await request.formData();
-    const id = formData.get('id') as string;
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
 
-    const db = drizzle(platform.env.DB);
     await db.delete(announcements).where(eq(announcements.id, id)).execute();
     return { success: true };
   },
 
-
-
-  // 创建通知渠道
   create_notifier: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
+
+    const name = stringValue(formData.get('name')).trim();
+    if (!name) return fail(400, { message: 'Name is required' });
+
+    let type;
+    let config: Record<string, string>;
+    try {
+      type = normalizeNotifierType(formData.get('type'));
+      config = buildNotifierConfig(type, formData, 'create');
+    } catch (e) {
+      return badRequest(e);
     }
 
-    if (!platform?.env?.DB) return fail(500);
-    const formData = await request.formData();
-    const name = formData.get('name') as string;
-    const type = formData.get('type') as string;
-    const webhookUrl = formData.get('webhookUrl') as string;
-    const telegramToken = formData.get('telegramToken') as string;
-    const telegramChatId = formData.get('telegramChatId') as string;
-
-    if (!name || !type) return fail(400, { message: 'Name and type required' });
-
-    let config: any = {};
-    if (type === 'telegram') {
-      if (!telegramToken || !telegramChatId) return fail(400, { message: 'Telegram token and chat ID required' });
-      config = { token: telegramToken, chatId: telegramChatId };
-    } else {
-      if (!webhookUrl) return fail(400, { message: 'Webhook URL required' });
-      config = { webhookUrl };
-    }
-
-    const db = drizzle(platform.env.DB);
     await db.insert(notifiers).values({
       id: crypto.randomUUID(),
       name,
@@ -289,88 +286,62 @@ export const actions = {
     return { success: true };
   },
 
-  // 删除通知渠道
   delete_notifier: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
-    }
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    if (!platform?.env?.DB) return fail(500);
-    const formData = await request.formData();
-    const id = formData.get('id') as string;
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
 
-    if (!id) return fail(400);
-
-    const db = drizzle(platform.env.DB);
     await db.delete(notifiers).where(eq(notifiers.id, id)).execute();
     return { success: true };
   },
 
-  // 更新通知渠道
   update_notifier: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) {
-      return fail(401, { message: "Unauthorized" });
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
+
+    const id = stringValue(formData.get('id')).trim();
+    const name = stringValue(formData.get('name')).trim();
+    if (!id || !name) return fail(400, { message: 'Missing fields' });
+
+    let type;
+    let config: Record<string, string>;
+    try {
+      type = normalizeNotifierType(formData.get('type'));
+      config = buildNotifierConfig(type, formData, 'update');
+    } catch (e) {
+      return badRequest(e);
     }
 
-    if (!platform?.env?.DB) return fail(500);
-    const formData = await request.formData();
-
-    const id = formData.get('id') as string;
-    const name = formData.get('name') as string;
-    const type = formData.get('type') as string;
-
-    let config: any = {};
-    if (type === 'discord' || type === 'slack' || type === 'webhook') {
-      config = { webhookUrl: formData.get('url') };
-    } else if (type === 'telegram') {
-      config = { token: formData.get('token'), chatId: formData.get('chat_id') };
-    }
-
-    if (!id || !name) {
-      return fail(400, { message: "Missing fields" });
-    }
-
-    const db = drizzle(platform.env.DB);
     await db.update(notifiers)
-      .set({
-        name,
-        type,
-        config: JSON.stringify(config),
-      })
+      .set({ name, type, config: JSON.stringify(config) })
       .where(eq(notifiers.id, id))
       .execute();
 
     return { success: true };
   },
 
-  // 登出
-  logout: async ({ cookies }) => {
-    cookies.delete('liteping_session', { path: '/' });
+  logout: async ({ request, cookies }) => {
+    const formData = await request.formData();
+    const authFailure = await requireActionAuth(cookies, formData);
+    if (authFailure) return authFailure;
+
+    clearAdminSessionCookie(cookies);
     throw redirect(303, '/login');
   },
 
-  // 批量操作
   batch_action: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const action = formData.get('action') as string;
-    const ids = (formData.get('ids') as string).split(',');
-
-    if (!ids.length) return fail(400);
-
-    const db = drizzle(platform.env.DB);
+    const action = stringValue(formData.get('action')).trim();
+    const ids = parseIds(formData.get('ids'));
+    if (ids.length === 0) return fail(400, { message: 'No monitors selected' });
 
     try {
       if (action === 'delete') {
-        for (const id of ids) {
-          await db.delete(heartbeats).where(eq(heartbeats.monitorId, id)).execute();
-          await db.delete(monitors).where(eq(monitors.id, id)).execute();
-        }
+        for (const id of ids) await deleteMonitorCascade(db, id);
       } else if (action === 'pause') {
         for (const id of ids) {
           await db.update(monitors).set({ active: false }).where(eq(monitors.id, id)).execute();
@@ -379,205 +350,236 @@ export const actions = {
         for (const id of ids) {
           await db.update(monitors).set({ active: true }).where(eq(monitors.id, id)).execute();
         }
+      } else {
+        return fail(400, { message: 'Unsupported batch action' });
       }
+
       return { success: true };
     } catch (e) {
-      console.error("Batch Action Failed:", e);
-      return fail(500);
+      console.error('Batch Action Failed:', e);
+      return fail(500, { message: 'Batch action failed' });
     }
   },
 
-  // 保存排序
   save_order: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const orderData = JSON.parse(formData.get('order') as string); // [{id, weight}]
+    let orderData: { id: string; weight: number }[];
 
-    const db = drizzle(platform.env.DB);
+    try {
+      const parsed = JSON.parse(stringValue(formData.get('order')));
+      if (!Array.isArray(parsed)) throw new Error('Order payload must be an array');
+
+      orderData = parsed.map((item) => {
+        if (!isRecord(item)) throw new Error('Invalid order item');
+        const id = stringValue(item.id).trim();
+        const weight = Number(item.weight);
+        if (!id || !Number.isInteger(weight)) throw new Error('Invalid order item');
+        return { id, weight };
+      });
+    } catch (e) {
+      return badRequest(e);
+    }
+
     try {
       for (const item of orderData) {
         await db.update(monitors).set({ weight: item.weight }).where(eq(monitors.id, item.id)).execute();
       }
+
       return { success: true };
     } catch (e) {
-      console.error("Save Order Failed:", e);
-      return fail(500);
+      console.error('Save Order Failed:', e);
+      return fail(500, { message: 'Failed to save order' });
     }
   },
 
-  // 更新设置
   update_settings: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const retentionDays = formData.get('retention_days') as string;
-    const siteTitle = formData.get('site_title') as string;
-    const siteDesc = formData.get('site_desc') as string;
-    const footerText = formData.get('footer_text') as string;
+    let retentionDays;
 
-    if (!retentionDays) return fail(400);
-
-    const db = drizzle(platform.env.DB);
     try {
-      // Upsert retention_days
-      await db.insert(settings)
-        .values({ key: 'retention_days', value: retentionDays })
-        .onConflictDoUpdate({ target: settings.key, set: { value: retentionDays } })
-        .execute();
+      retentionDays = normalizeRetentionDays(formData.get('retention_days'));
+    } catch (e) {
+      return badRequest(e);
+    }
 
-      // Upsert site_title
-      if (siteTitle !== null) {
-        await db.insert(settings)
-          .values({ key: 'site_title', value: siteTitle })
-          .onConflictDoUpdate({ target: settings.key, set: { value: siteTitle } })
-          .execute();
-      }
+    try {
+      await upsertSetting(db, 'retention_days', retentionDays);
+      await upsertSetting(db, 'site_title', stringValue(formData.get('site_title')));
+      await upsertSetting(db, 'site_desc', stringValue(formData.get('site_desc')));
+      await upsertSetting(db, 'footer_text', stringValue(formData.get('footer_text')));
 
-      // Upsert site_desc
-      if (siteDesc !== null) {
-        await db.insert(settings)
-          .values({ key: 'site_desc', value: siteDesc })
-          .onConflictDoUpdate({ target: settings.key, set: { value: siteDesc } })
-          .execute();
-      }
-
-      // Upsert footer_text
-      if (footerText !== null) {
-        await db.insert(settings)
-          .values({ key: 'footer_text', value: footerText })
-          .onConflictDoUpdate({ target: settings.key, set: { value: footerText } })
-          .execute();
-      }
-      
       return { success: true };
     } catch (e) {
-      console.error("Update Settings Failed:", e);
-      return fail(500);
+      console.error('Update Settings Failed:', e);
+      return fail(500, { message: 'Failed to update settings' });
     }
   },
 
-  // --- Maintenance Actions ---
   create_maintenance: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const monitorId = formData.get('monitor_id') as string;
-    const title = formData.get('title') as string;
-    const startTime = formData.get('start_time') as string; // ISO string
-    const endTime = formData.get('end_time') as string; // ISO string
+    const monitorId = stringValue(formData.get('monitor_id')).trim();
+    const title = stringValue(formData.get('title')).trim();
 
-    if (!monitorId || !title || !startTime || !endTime) return fail(400);
+    if (!monitorId || !title) return fail(400, { message: 'Missing fields' });
 
-    const db = drizzle(platform.env.DB);
+    let startTime;
+    let endTime;
     try {
+      startTime = parseUnixTimestamp(formData.get('start_time'), 'Start time');
+      endTime = parseUnixTimestamp(formData.get('end_time'), 'End time');
+      assertMaintenanceWindow(startTime, endTime);
+    } catch (e) {
+      return badRequest(e);
+    }
+
+    try {
+      const monitor = await db.select({ id: monitors.id })
+        .from(monitors)
+        .where(eq(monitors.id, monitorId))
+        .get();
+
+      if (!monitor) return fail(400, { message: 'Monitor not found' });
+
       await db.insert(maintenance).values({
         id: crypto.randomUUID(),
         monitorId,
         title,
-        startTime: Math.floor(new Date(startTime).getTime() / 1000),
-        endTime: Math.floor(new Date(endTime).getTime() / 1000),
+        startTime,
+        endTime,
         createdAt: Math.floor(Date.now() / 1000)
       }).execute();
+
       return { success: true };
     } catch (e) {
-      console.error("Create Maintenance Failed:", e);
-      return fail(500);
+      console.error('Create Maintenance Failed:', e);
+      return fail(500, { message: 'Failed to create maintenance window' });
     }
   },
 
   delete_maintenance: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const id = formData.get('id') as string;
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
 
-    if (!id) return fail(400);
-
-    const db = drizzle(platform.env.DB);
-    try {
-      await db.delete(maintenance).where(eq(maintenance.id, id)).execute();
-      return { success: true };
-    } catch (e) {
-      console.error("Delete Maintenance Failed:", e);
-      return fail(500);
-    }
+    await db.delete(maintenance).where(eq(maintenance.id, id)).execute();
+    return { success: true };
   },
 
-  // --- Incident Actions ---
   update_incident: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const id = formData.get('id') as string;
-    const cause = formData.get('cause') as string;
+    const id = stringValue(formData.get('id')).trim();
+    const cause = stringValue(formData.get('cause')).trim();
+    if (!id || !cause) return fail(400, { message: 'Missing fields' });
 
-    if (!id || !cause) return fail(400);
-
-    const db = drizzle(platform.env.DB);
-    try {
-      await db.update(incidents)
-        .set({ cause })
-        .where(eq(incidents.id, id))
-        .execute();
-
-      return { success: true };
-    } catch (e) {
-      console.error("Update Incident Failed:", e);
-      return fail(500);
-    }
+    await db.update(incidents).set({ cause }).where(eq(incidents.id, id)).execute();
+    return { success: true };
   },
 
   resolve_incident: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const id = formData.get('id') as string;
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
 
-    if (!id) return fail(400);
+    await db.update(incidents)
+      .set({ resolvedAt: Math.floor(Date.now() / 1000) })
+      .where(eq(incidents.id, id))
+      .execute();
 
-    const db = drizzle(platform.env.DB);
-    try {
-      await db.update(incidents)
-        .set({ resolvedAt: Math.floor(Date.now() / 1000) })
-        .where(eq(incidents.id, id))
-        .execute();
-      return { success: true };
-    } catch (e) {
-      console.error("Resolve Incident Failed:", e);
-      return fail(500);
-    }
+    return { success: true };
   },
 
   delete_incident: async ({ request, platform, cookies }) => {
-    const session = cookies.get('liteping_session');
-    if (session !== env.ADMIN_PASSWORD) return fail(401);
-    if (!platform?.env?.DB) return fail(500);
+    const { db, formData, failure } = await getActionContext(request, platform, cookies);
+    if (failure) return failure;
 
-    const formData = await request.formData();
-    const id = formData.get('id') as string;
+    const id = stringValue(formData.get('id')).trim();
+    if (!id) return fail(400, { message: 'Missing ID' });
 
-    if (!id) return fail(400);
-
-    const db = drizzle(platform.env.DB);
-    try {
-      await db.delete(incidents).where(eq(incidents.id, id)).execute();
-      return { success: true };
-    } catch (e) {
-      console.error("Delete Incident Failed:", e);
-      return fail(500);
-    }
+    await db.delete(incidents).where(eq(incidents.id, id)).execute();
+    return { success: true };
   }
 };
+
+function getDb(platform: App.Platform | undefined) {
+  return platform?.env?.DB ? drizzle(platform.env.DB) : null;
+}
+
+async function getActionContext(request: Request, platform: App.Platform | undefined, cookies: Cookies) {
+  const formData = await request.formData();
+  const authFailure = await requireActionAuth(cookies, formData);
+  if (authFailure) {
+    return { formData, db: null, failure: authFailure };
+  }
+
+  const db = getDb(platform);
+  if (!db) {
+    return { formData, db: null, failure: fail(500, { message: 'No DB' }) };
+  }
+
+  return { formData, db, failure: null };
+}
+
+async function requireActionAuth(cookies: Cookies, formData: FormData) {
+  if (await isAdminAuthenticated(cookies)) {
+    if (verifyCsrfToken(cookies, formData)) {
+      return null;
+    }
+
+    return fail(403, { message: 'Invalid CSRF token' });
+  }
+
+  return fail(401, { message: 'Unauthorized' });
+}
+
+function badRequest(error: unknown) {
+  return fail(400, { message: error instanceof Error ? error.message : 'Bad request' });
+}
+
+function parseIds(value: FormDataEntryValue | null) {
+  return stringValue(value)
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+async function deleteMonitorCascade(db: Database, id: string) {
+  await db.delete(hourlyStats).where(eq(hourlyStats.monitorId, id)).execute();
+  await db.delete(heartbeats).where(eq(heartbeats.monitorId, id)).execute();
+  await db.delete(incidents).where(eq(incidents.monitorId, id)).execute();
+  await db.delete(maintenance).where(eq(maintenance.monitorId, id)).execute();
+  await db.delete(monitors).where(eq(monitors.id, id)).execute();
+}
+
+async function upsertSetting(db: Database, key: string, value: string) {
+  await db.insert(settings)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: settings.key, set: { value } })
+    .execute();
+}
+
+function buildNotifierConfig(type: string, formData: FormData, mode: 'create' | 'update'): Record<string, string> {
+  if (type === 'telegram') {
+    const token = stringValue(formData.get(mode === 'create' ? 'telegramToken' : 'token')).trim();
+    const chatId = stringValue(formData.get(mode === 'create' ? 'telegramChatId' : 'chat_id')).trim();
+
+    if (!token || !chatId) {
+      throw new Error('Telegram token and chat ID are required');
+    }
+
+    return { token, chatId };
+  }
+
+  return { webhookUrl: normalizeWebhookUrl(formData.get(mode === 'create' ? 'webhookUrl' : 'url')) };
+}

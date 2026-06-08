@@ -57,6 +57,13 @@
       "when": 1765648116093,
       "tag": "0007_lying_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1780943198866,
+      "tag": "0008_clean_monitor_relations",
+      "breakpoints": true
     }
   ]
 }

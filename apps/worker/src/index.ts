@@ -12,9 +12,21 @@ function chunk<T>(array: T[], size: number): T[][] {
   );
 }
 
+function getMonitorUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getMonitorMethod(value: string | null) {
+  return value === 'GET' || value === 'HEAD' || value === 'POST' ? value : 'HEAD';
+}
+
 type Bindings = {
   DB: D1Database;
-  DISCORD_WEBHOOK_URL?: string;
   NOTIFY_LANGUAGE?: string;
 };
 
@@ -86,13 +98,18 @@ export default {
       const start = Date.now();
       let status = 0;
       let errorMsg = '';
+      const targetUrl = getMonitorUrl(target.url);
 
       try {
+        if (!targetUrl) {
+          throw new Error('Invalid monitor URL');
+        }
+
         // Simple Retry Logic (1 retry)
         for (let i = 0; i < 2; i++) {
           try {
-            const response = await fetch(target.url, {
-              method: target.method as string,
+            const response = await fetch(targetUrl, {
+              method: getMonitorMethod(target.method),
               signal: AbortSignal.timeout(10000), // 10s timeout
               headers: {
                 'User-Agent': 'LitePing-Monitor/1.0 (Cloudflare Workers)',
@@ -202,7 +219,10 @@ export default {
         try {
           // A. Get retention settings (default 30 days)
           const settingsList = await db.select().from(settings).where(eq(settings.key, 'retention_days')).all();
-          const retentionDays = settingsList.length > 0 ? parseInt(settingsList[0].value) : 30;
+          const parsedRetentionDays = settingsList.length > 0 ? Number.parseInt(settingsList[0].value, 10) : 30;
+          const retentionDays = Number.isInteger(parsedRetentionDays) && parsedRetentionDays >= 1 && parsedRetentionDays <= 365
+            ? parsedRetentionDays
+            : 30;
           
           // B. Aggregate data older than 24h into hourly_stats
           // Target window: 24h ago to 48h ago (yesterday)
@@ -224,6 +244,10 @@ export default {
             FROM heartbeats
             WHERE timestamp >= ${twoDaysAgo} AND timestamp < ${oneDayAgo}
             GROUP BY monitor_id, hour_start
+            ON CONFLICT(monitor_id, timestamp) DO UPDATE SET
+              avg_latency = excluded.avg_latency,
+              success_count = excluded.success_count,
+              total_count = excluded.total_count
           `;
           await db.run(aggregationQuery);
 

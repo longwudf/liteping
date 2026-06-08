@@ -62,6 +62,14 @@
                 </div>
             {/if}
 
+            {#if form?.notConfigured}
+                <div
+                    class="flex items-center gap-2 text-yellow-300 text-xs justify-center bg-yellow-900/10 py-2 rounded border border-yellow-900/30"
+                >
+                    ADMIN_PASSWORD is not configured.
+                </div>
+            {/if}
+
             <button
                 class="w-full bg-green-600 hover:bg-green-500 text-black font-bold py-3 rounded transition-all active:scale-[0.98] hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]"
             >

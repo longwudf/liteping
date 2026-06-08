@@ -1,5 +1,7 @@
 // apps/web/src/lib/badge.ts
 export function generateSvgBadge(label: string, status: string, color: string): string {
+  const safeLabel = escapeXml(label);
+  const safeStatus = escapeXml(status);
   const labelWidth = label.length * 7 + 10;
   const statusWidth = status.length * 7 + 10;
   const totalWidth = labelWidth + statusWidth;
@@ -19,11 +21,30 @@ export function generateSvgBadge(label: string, status: string, color: string): 
     <path fill="url(#b)" d="M0 0h${totalWidth}v20H0z"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
-    <text x="${labelWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${label}</text>
-    <text x="${labelWidth / 2}" y="14">${label}</text>
-    <text x="${labelWidth + statusWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${status}</text>
-    <text x="${labelWidth + statusWidth / 2}" y="14">${status}</text>
+    <text x="${labelWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${safeLabel}</text>
+    <text x="${labelWidth / 2}" y="14">${safeLabel}</text>
+    <text x="${labelWidth + statusWidth / 2}" y="15" fill="#010101" fill-opacity=".3">${safeStatus}</text>
+    <text x="${labelWidth + statusWidth / 2}" y="14">${safeStatus}</text>
   </g>
 </svg>
 `.trim();
+}
+
+function escapeXml(value: string) {
+  return value.replace(/[<>&'"]/g, (char) => {
+    switch (char) {
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '&':
+        return '&amp;';
+      case "'":
+        return '&apos;';
+      case '"':
+        return '&quot;';
+      default:
+        return char;
+    }
+  });
 }
