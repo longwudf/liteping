@@ -128,6 +128,11 @@
             return "--:--";
         }
     }
+
+    function incidentDurationMinutes(startedAt?: number, resolvedAt?: number) {
+        if (!startedAt || !resolvedAt || resolvedAt < startedAt) return "--";
+        return Math.max(1, Math.ceil((resolvedAt - startedAt) / 60));
+    }
 </script>
 
 <div class="min-h-screen bg-[#0a0a0a] text-white font-mono p-8">
@@ -660,9 +665,14 @@
                                                 d="M5 13l4 4L19 7"
                                             ></path></svg
                                         >
-                                        <span>
-                                            {$t.status.resolved}, {$t.labels
-                                                .duration}
+                                        <span
+                                            class="inline-flex flex-wrap items-center gap-x-1 gap-y-1"
+                                        >
+                                            <span>{$t.status.resolved}</span>
+                                            <span class="text-neutral-600"
+                                                >·</span
+                                            >
+                                            <span>{$t.detail.resolved_at}</span>
                                             <strong class="text-gray-300">
                                                 {item.resolvedAt &&
                                                 item.startedAt
@@ -672,6 +682,17 @@
                                                       )
                                                     : "--"}
                                             </strong>
+                                            <span class="text-neutral-600"
+                                                >·</span
+                                            >
+                                            <span>{$t.detail.resolved_after}</span>
+                                            <strong class="text-gray-300">
+                                                {incidentDurationMinutes(
+                                                    item.startedAt,
+                                                    item.resolvedAt,
+                                                )}
+                                            </strong>
+                                            <span>{$t.labels.mins}</span>
                                         </span>
                                     {:else}
                                         <svg
